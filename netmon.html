@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Network Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;color:#1a1a1a;padding:16px;max-width:480px;margin:0 auto}
+h1{font-size:18px;font-weight:500;margin-bottom:4px;margin-top:8px}
+.sub{font-size:13px;color:#666;margin-bottom:16px}
+.inst{background:#fff;border-radius:10px;border:1px solid #e5e5e5;padding:12px;margin-bottom:14px}
+.inst p{font-size:12px;color:#555;line-height:1.7;margin-bottom:4px}
+.inst p:last-child{margin-bottom:0}
+.inst strong{font-weight:500;color:#1a1a1a}
+
+/* status bar */
+.status-bar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.dot{width:9px;height:9px;border-radius:50%;background:#aaa;flex-shrink:0}
+.dot.online{background:#3B6D11}
+.dot.offline{background:#A32D2D}
+.connlabel{font-size:13px;color:#555;flex:1;min-width:0}
+.badge{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:500;white-space:nowrap}
+.badge.wifi{background:#E6F1FB;color:#0C447C}
+.badge.cell{background:#FAEEDA;color:#633806}
+.badge.unk{background:#eee;color:#555}
+
+/* signal bars */
+.signal{display:flex;align-items:flex-end;gap:2px;height:16px}
+.signal .b{width:4px;border-radius:1px;background:#ddd}
+.signal .b.lit{background:#3B6D11}
+.signal .b:nth-child(1){height:4px}
+.signal .b:nth-child(2){height:7px}
+.signal .b:nth-child(3){height:11px}
+.signal .b:nth-child(4){height:15px}
+
+/* countdown ring */
+.countdown-wrap{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 12px;background:#fff;border-radius:10px;border:1px solid #e5e5e5}
+.ring-container{position:relative;width:48px;height:48px;flex-shrink:0}
+.ring-container svg{transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:#eee;stroke-width:4}
+.ring-fg{fill:none;stroke:#185FA5;stroke-width:4;stroke-linecap:round;transition:stroke-dashoffset 1s linear,stroke .3s}
+.ring-fg.running{stroke:#EF9F27;animation:spin 1.2s linear infinite}
+@keyframes spin{to{stroke-dashoffset:-132}}
+.ring-label{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:11px;font-weight:500;color:#1a1a1a;text-align:center;line-height:1.1}
+.ring-label .unit{font-size:9px;color:#aaa;display:block}
+.countdown-info{flex:1;min-width:0}
+.countdown-info .ci-title{font-size:12px;font-weight:500;color:#1a1a1a;margin-bottom:2px}
+.countdown-info .ci-sub{font-size:11px;color:#888}
+
+/* consistency score */
+.score-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;border:1px solid #e5e5e5;background:#fff}
+.score-dot{width:7px;height:7px;border-radius:50%}
+
+.interval-row{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.interval-row label{font-size:12px;color:#555;white-space:nowrap}
+.interval-row input[type=range]{flex:1;accent-color:#185FA5}
+.interval-row span{font-size:12px;font-weight:500;min-width:48px}
+.btn-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+button{border:1px solid #d0d0d0;background:#fff;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;color:#1a1a1a;white-space:nowrap;font-family:inherit}
+button:active{transform:scale(.97)}
+button.go{background:#E6F1FB;border-color:#185FA5;color:#0C447C}
+button.stop{background:#FCEBEB;border-color:#E24B4A;color:#A32D2D}
+button:disabled{opacity:.4;cursor:not-allowed}
+.progress{height:3px;background:#eee;border-radius:2px;overflow:hidden;margin-bottom:10px;display:none}
+.pfill{height:100%;width:0%;background:#185FA5;transition:width .3s}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.mcard{background:#fff;border-radius:8px;border:1px solid #e5e5e5;padding:10px 12px}
+.mcard .lbl{font-size:11px;color:#888;margin-bottom:2px;display:flex;align-items:center;justify-content:space-between}
+.mcard .val{font-size:20px;font-weight:500;color:#1a1a1a;line-height:1.2}
+.mcard .msub{font-size:10px;color:#aaa;margin-top:2px}
+.tips{background:#FAEEDA;border:1px solid #EF9F27;border-radius:8px;padding:10px 12px;margin-bottom:12px;display:none}
+.tips p{font-size:12px;color:#633806;line-height:1.6}
+.sep{height:1px;background:#e5e5e5;margin:14px 0}
+.sec-label{font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.legend-row{display:flex;gap:12px;margin-bottom:6px}
+.legend-row span{display:flex;align-items:center;gap:4px;font-size:11px;color:#666}
+.lsq{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.chart-wrap{position:relative;width:100%;margin-bottom:12px}
+.sum-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.log-box{background:#fff;border-radius:8px;border:1px solid #e5e5e5;padding:10px 12px;max-height:220px;overflow-y:auto}
+.le{font-size:11px;font-family:ui-monospace,monospace;color:#555;line-height:1.9;border-bottom:1px solid #f0f0f0;padding:1px 0}
+.le:last-child{border-bottom:none}
+.le .ts{color:#bbb;margin-right:5px}
+.le.ok .m{color:#3B6D11}
+.le.warn .m{color:#854F0B}
+.le.err .m{color:#A32D2D}
+.le.info .m{color:#185FA5}
+.warn-box{background:#fff8e6;border:1px solid #f0c040;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#7a5c00;line-height:1.6;display:none}
+</style>
+</head>
+<body>
+
+<h1>Network Monitor</h1>
+<p class="sub">Periodic Wi-Fi &amp; cellular diagnostics</p>
+
+<details id="inst-details" style="background:#fff;border-radius:10px;border:1px solid #e5e5e5;padding:10px 12px;margin-bottom:14px">
+  <summary style="font-size:12px;font-weight:500;color:#555;cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between">
+    How to use
+    <span id="inst-arrow" style="font-size:10px;color:#aaa;transition:transform .2s">▼</span>
+  </summary>
+  <div style="margin-top:8px;border-top:1px solid #f0f0f0;padding-top:8px">
+    <p style="font-size:12px;color:#555;line-height:1.7;margin-bottom:3px"><strong style="font-weight:500;color:#1a1a1a">Wi-Fi:</strong> tap "Start Wi-Fi session".</p>
+    <p style="font-size:12px;color:#555;line-height:1.7;margin-bottom:3px"><strong style="font-weight:500;color:#1a1a1a">Cellular:</strong> turn off Wi-Fi, then tap "Start cellular session".</p>
+    <p style="font-size:12px;color:#555;line-height:1.7">Run both sessions to compare side-by-side.</p>
+  </div>
+</details>
+<script>
+(function(){
+  var d=document.getElementById('inst-details');
+  var a=document.getElementById('inst-arrow');
+  d.addEventListener('toggle',function(){a.style.transform=d.open?'rotate(180deg)':'rotate(0deg)';});
+})();
+</script>
+
+<div class="warn-box" id="warnbox"></div>
+
+<div class="status-bar">
+  <div class="dot" id="dot"></div>
+  <span class="connlabel" id="connlabel">Detecting…</span>
+  <span class="badge unk" id="connbadge">—</span>
+  <div class="signal" id="signal-bars">
+    <div class="b" id="sb1"></div><div class="b" id="sb2"></div>
+    <div class="b" id="sb3"></div><div class="b" id="sb4"></div>
+  </div>
+</div>
+
+<!-- Countdown ring — hidden until session starts -->
+<div class="countdown-wrap" id="cdwrap" style="display:none">
+  <div class="ring-container">
+    <svg width="48" height="48" viewBox="0 0 48 48">
+      <circle class="ring-bg" cx="24" cy="24" r="20"/>
+      <circle class="ring-fg" id="ring" cx="24" cy="24" r="20"
+        stroke-dasharray="125.66" stroke-dashoffset="0"/>
+    </svg>
+    <div class="ring-label" id="ring-label">
+      <span id="ring-num">—</span>
+      <span class="unit" id="ring-unit">sec</span>
+    </div>
+  </div>
+  <div class="countdown-info">
+    <div class="ci-title" id="ci-title">Waiting to start</div>
+    <div class="ci-sub" id="ci-sub">Start a session to begin monitoring</div>
+  </div>
+</div>
+
+<div class="interval-row">
+  <label>Test every</label>
+  <input type="range" id="ivslider" min="0" max="15" value="3" step="1"
+    oninput="onIvChange(this.value)">
+  <span id="ivout">3 min</span>
+</div>
+
+<div class="btn-row">
+  <button class="go" id="btnWifi" onclick="startSession('wifi')">Start Wi-Fi session</button>
+  <button class="go" id="btnCell" onclick="startSession('cell')">Start cellular session</button>
+  <button class="stop" id="btnStop" onclick="stopSession()" disabled>Stop</button>
+  <button id="btnExport" onclick="exportData()">Export CSV</button>
+</div>
+
+<div class="progress" id="prog"><div class="pfill" id="pfill"></div></div>
+
+<div class="cards">
+  <div class="mcard">
+    <div class="lbl">Download <span id="score-dl"></span></div>
+    <div class="val" id="cdl">—</div><div class="msub" id="cdl-s"></div>
+  </div>
+  <div class="mcard">
+    <div class="lbl">Upload <span id="score-ul"></span></div>
+    <div class="val" id="cul">—</div><div class="msub" id="cul-s"></div>
+  </div>
+  <div class="mcard">
+    <div class="lbl">Latency <span id="score-lat"></span></div>
+    <div class="val" id="clat">—</div><div class="msub" id="clat-s"></div>
+  </div>
+  <div class="mcard">
+    <div class="lbl">Jitter <span id="score-jit"></span></div>
+    <div class="val" id="cjit">—</div><div class="msub" id="cjit-s"></div>
+  </div>
+</div>
+
+<div class="tips" id="tips"><p id="tiptext"></p></div>
+
+<div class="sep"></div>
+
+<div class="sec-label">Download speed (Mbps)</div>
+<div class="legend-row">
+  <span><span class="lsq" style="background:#185FA5"></span>Wi-Fi</span>
+  <span><span class="lsq" style="background:#BA7517"></span>Cellular</span>
+</div>
+<div class="chart-wrap" style="height:160px">
+  <canvas id="chartDl"></canvas>
+</div>
+
+<div class="sec-label">Latency (ms)</div>
+<div class="legend-row">
+  <span><span class="lsq" style="background:#185FA5"></span>Wi-Fi</span>
+  <span><span class="lsq" style="background:#BA7517"></span>Cellular</span>
+</div>
+<div class="chart-wrap" style="height:160px">
+  <canvas id="chartLat"></canvas>
+</div>
+
+<div class="sep"></div>
+<div class="sec-label" style="margin-bottom:8px">Summary comparison</div>
+<div class="sum-cards">
+  <div class="mcard"><div class="lbl">Wi-Fi avg DL</div><div class="val" id="s-wdl">—</div></div>
+  <div class="mcard"><div class="lbl">Cell avg DL</div><div class="val" id="s-cdl">—</div></div>
+  <div class="mcard"><div class="lbl">Wi-Fi avg lat</div><div class="val" id="s-wlat">—</div></div>
+  <div class="mcard"><div class="lbl">Cell avg lat</div><div class="val" id="s-clat">—</div></div>
+  <div class="mcard"><div class="lbl">Wi-Fi consistency</div><div class="val" id="s-wcons">—</div></div>
+  <div class="mcard"><div class="lbl">Cell consistency</div><div class="val" id="s-ccons">—</div></div>
+</div>
+
+<div class="sep"></div>
+<div class="sec-label" style="margin-bottom:6px">Event log</div>
+<div class="log-box" id="logbox">
+  <div class="le info"><span class="ts">--:--:--</span><span class="m">Ready. Start a session above.</span></div>
+</div>
+
+<script>
+var MAXPTS = 40;
+var CIRC = 125.66; /* 2*pi*20 */
+var sessions = { wifi: [], cell: [] };
+var sessionType = null, timerRef = null, cdRef = null, running = false;
+var intervalSec = 180;
+var cdRemaining = 0;
+var dlChart = null, latChart = null;
+
+function ts() { return new Date().toLocaleTimeString('en-US',{hour12:false}); }
+function sleep(ms) { return new Promise(function(r){setTimeout(r,ms);}); }
+
+var IV_ALL = [15, 30, 45, 60, 120, 180, 300, 420, 600, 720, 900, 1200, 1500, 1800, 2400, 3600];
+function ivLabel(sec) {
+  if (sec < 60) return sec + 's';
+  if (sec % 60 === 0) return (sec/60) + ' min';
+  return Math.floor(sec/60) + 'm ' + (sec%60) + 's';
+}
+function onIvChange(v) {
+  var sec = IV_ALL[parseInt(v)] || 180;
+  intervalSec = sec;
+  document.getElementById('ivout').textContent = ivLabel(sec);
+}
+
+/* ── log ── */
+function log(msg, type) {
+  type = type || 'info';
+  var box = document.getElementById('logbox');
+  var d = document.createElement('div'); d.className = 'le ' + type;
+  d.innerHTML = '<span class="ts">'+ts()+'</span><span class="m">'+msg+'</span>';
+  box.appendChild(d); box.scrollTop = box.scrollHeight;
+}
+
+function setProgress(p) {
+  var b = document.getElementById('prog'), f = document.getElementById('pfill');
+  if (p==null){b.style.display='none';return;}
+  b.style.display='block'; f.style.width=p+'%';
+}
+function showWarn(msg) {
+  var b = document.getElementById('warnbox');
+  b.textContent = msg||''; b.style.display = msg?'block':'none';
+}
+
+/* ── signal bars ── */
+function setSignalBars(level) {
+  /* level 0-4 */
+  for (var i=1;i<=4;i++) {
+    var el = document.getElementById('sb'+i);
+    el.className = 'b' + (i<=level?' lit':'');
+  }
+}
+function readSignal() {
+  var nav = navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+  if (!nav) { setSignalBars(0); return; }
+  var dl = nav.downlink; /* Mbps hint */
+  var rtt = nav.rtt;
+  if (dl >= 10) setSignalBars(4);
+  else if (dl >= 4) setSignalBars(3);
+  else if (dl >= 1) setSignalBars(2);
+  else if (dl > 0) setSignalBars(1);
+  else setSignalBars(0);
+}
+
+/* ── connection detect ── */
+function detectConn() {
+  var dot=document.getElementById('dot'), badge=document.getElementById('connbadge'), lbl=document.getElementById('connlabel');
+  if (!navigator.onLine) {
+    dot.className='dot offline'; badge.className='badge unk'; badge.textContent='Offline'; lbl.textContent='No connection'; setSignalBars(0); return 'offline';
+  }
+  var nav = navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+  dot.className = 'dot online';
+  if (nav) {
+    var t = nav.type||nav.effectiveType||'unknown';
+    var isCell = (t==='cellular'||t==='wimax'||t==='bluetooth');
+    badge.className = 'badge '+(isCell?'cell':'wifi');
+    badge.textContent = isCell?'Cellular':'Wi-Fi / wired';
+    lbl.textContent = 'Connected';
+    readSignal();
+    return isCell?'cell':'wifi';
+  }
+  badge.className='badge wifi'; badge.textContent='Connected'; lbl.textContent='Connected'; setSignalBars(0); return 'wifi';
+}
+
+/* ── countdown ring ── */
+function startCountdown(totalSec) {
+  if (cdRef) clearInterval(cdRef);
+  cdRemaining = totalSec;
+  updateRing(cdRemaining, totalSec, false);
+  cdRef = setInterval(function() {
+    cdRemaining--;
+    if (cdRemaining <= 0) { cdRemaining = 0; }
+    updateRing(cdRemaining, totalSec, false);
+  }, 1000);
+}
+
+function updateRing(remaining, total, isRunning) {
+  var ring = document.getElementById('ring');
+  var numEl = document.getElementById('ring-num');
+  var unitEl = document.getElementById('ring-unit');
+  var titleEl = document.getElementById('ci-title');
+  var subEl = document.getElementById('ci-sub');
+
+  if (isRunning) {
+    ring.className = 'ring-fg running';
+    ring.style.strokeDashoffset = '0';
+    numEl.textContent = '…';
+    unitEl.textContent = '';
+    titleEl.textContent = 'Testing now';
+    subEl.textContent = 'Measuring speed and latency';
+    return;
+  }
+
+  ring.className = 'ring-fg';
+  var frac = total > 0 ? remaining / total : 0;
+  var offset = CIRC * (1 - frac);
+  ring.style.strokeDashoffset = offset.toFixed(1);
+
+  if (remaining >= 60) {
+    numEl.textContent = Math.ceil(remaining/60);
+    unitEl.textContent = 'min';
+  } else {
+    numEl.textContent = remaining;
+    unitEl.textContent = 'sec';
+  }
+
+  var type = sessionType ? sessionType.toUpperCase() : '';
+  titleEl.textContent = remaining === 0 ? 'Starting test…' : 'Next test in';
+  subEl.textContent = type ? type + ' session active' : '';
+}
+
+function setRingRunning() {
+  updateRing(0, intervalSec, true);
+}
+function setRingIdle() {
+  var ring = document.getElementById('ring');
+  ring.className = 'ring-fg';
+  ring.style.strokeDashoffset = CIRC;
+  document.getElementById('ring-num').textContent = '—';
+  document.getElementById('ring-unit').textContent = '';
+  document.getElementById('ci-title').textContent = 'Session stopped';
+  document.getElementById('ci-sub').textContent = '';
+}
+
+/* ── consistency score ── */
+function consistencyScore(arr) {
+  /* returns 0-100; inverse coefficient of variation, clamped */
+  var v = arr.filter(function(x){return x!=null && x>0;});
+  if (v.length < 3) return null;
+  var mean = v.reduce(function(a,b){return a+b;},0)/v.length;
+  if (mean === 0) return 0;
+  var sd = Math.sqrt(v.map(function(x){return(x-mean)*(x-mean);}).reduce(function(a,b){return a+b;},0)/v.length);
+  var cv = sd/mean;
+  return Math.round(Math.max(0, Math.min(100, (1-cv)*100)));
+}
+function scoreColor(s) {
+  if (s===null) return '#ccc';
+  if (s>=80) return '#3B6D11';
+  if (s>=55) return '#BA7517';
+  return '#A32D2D';
+}
+function scorePill(s) {
+  if (s===null) return '';
+  var c = scoreColor(s);
+  return '<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:10px;background:'+c+'22;border:1px solid '+c+'55;font-size:10px;font-weight:500;color:'+c+'">' + s + '%</span>';
+}
+
+/* ── measurements ── */
+async function measureLatency(n) {
+  n = n||8;
+  var urls = [
+    'https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js'
+  ];
+  var times=[], fails=0;
+  for (var i=0;i<n;i++) {
+    var u = urls[i%2]+'?_noc='+Date.now()+Math.random();
+    var s = performance.now();
+    try {
+      await fetch(u,{method:'HEAD',cache:'no-store',mode:'cors'});
+      times.push(Math.round(performance.now()-s));
+    } catch(e) {
+      try { var s2=performance.now(); await fetch(u,{cache:'no-store',mode:'no-cors'}); times.push(Math.round(performance.now()-s2)); }
+      catch(e2) { fails++; times.push(null); }
+    }
+    await sleep(90);
+  }
+  var v=times.filter(function(t){return t!==null;});
+  if(!v.length) return{avg:null,jitter:null,loss:100};
+  var avg=Math.round(v.reduce(function(a,b){return a+b;},0)/v.length);
+  var jitter=Math.round(Math.sqrt(v.map(function(x){return(x-avg)*(x-avg);}).reduce(function(a,b){return a+b;},0)/v.length));
+  return{avg:avg,jitter:jitter,loss:Math.round(fails/n*100),min:Math.min.apply(null,v),max:Math.max.apply(null,v)};
+}
+
+async function measureDL() {
+  var files=[
+    {url:'https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js'},
+    {url:'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'}
+  ];
+  var results=[];
+  for(var i=0;i<files.length;i++){
+    try{
+      var t0=performance.now();
+      var r=await fetch(files[i].url+'?_noc='+Date.now(),{cache:'no-store'});
+      var buf=await r.arrayBuffer();
+      var dt=(performance.now()-t0)/1000;
+      if(dt>0.05) results.push((buf.byteLength*8)/(dt*1e6));
+    }catch(e){}
+    await sleep(80);
+  }
+  return results.length?results.reduce(function(a,b){return a+b;},0)/results.length:null;
+}
+
+async function measureUL() {
+  var results=[], sizes=[60000,120000];
+  var endpoints=['https://httpbin.org/post','https://postman-echo.com/post'];
+  for(var i=0;i<sizes.length;i++){
+    var data=new Uint8Array(sizes[i]); crypto.getRandomValues(data);
+    for(var j=0;j<endpoints.length;j++){
+      try{
+        var t0=performance.now();
+        var resp=await fetch(endpoints[j]+'?_noc='+Date.now(),{method:'POST',body:new Blob([data]),cache:'no-store'});
+        if(resp.ok){var dt=(performance.now()-t0)/1000; if(dt>0.05){results.push((sizes[i]*8)/(dt*1e6));break;}}
+      }catch(e){}
+    }
+    await sleep(80);
+  }
+  return results.length?results.reduce(function(a,b){return a+b;},0)/results.length:null;
+}
+
+function fmtMbps(v){if(v==null)return'—';if(v<1)return Math.round(v*1000)+'K';return v.toFixed(1)+'M';}
+function fmtMs(v){return v==null?'—':v+'ms';}
+
+function updateLiveCards(dl,ul,lat,jit,type) {
+  document.getElementById('cdl').textContent=fmtMbps(dl);
+  document.getElementById('cdl-s').textContent=dl?'Mbps':'';
+  document.getElementById('cul').textContent=fmtMbps(ul);
+  document.getElementById('cul-s').textContent=ul?'Mbps':'';
+  document.getElementById('clat').textContent=fmtMs(lat);
+  document.getElementById('clat-s').textContent=lat?'round-trip':'';
+  document.getElementById('cjit').textContent=fmtMs(jit);
+  document.getElementById('cjit-s').textContent=jit?'variation':'';
+
+  /* consistency pills — only show after 3+ samples */
+  var pts = sessions[type];
+  if(pts.length >= 3){
+    var sdl=consistencyScore(pts.map(function(p){return p.dl;}));
+    var slat=consistencyScore(pts.map(function(p){return p.lat;}));
+    document.getElementById('score-dl').innerHTML=scorePill(sdl);
+    document.getElementById('score-lat').innerHTML=scorePill(slat);
+  }
+}
+
+function analyzeTips(dl,lat,jit,loss,type){
+  var issues=[], label=type==='wifi'?'Wi-Fi':'Cellular';
+  if(dl!=null&&dl<1) issues.push(label+' download under 1 Mbps — very slow. Check signal or router proximity.');
+  else if(dl!=null&&dl<5) issues.push('Low download ('+fmtMbps(dl)+'ps). Streaming may buffer.');
+  if(lat!=null&&lat>200) issues.push('High latency ('+lat+'ms) — real-time apps will feel delayed.');
+  if(jit!=null&&jit>60) issues.push('High jitter ('+jit+'ms) — unstable connection, choppy calls.');
+  if(loss>10) issues.push('Packet loss at '+loss+'% — significant data being dropped.');
+  if(!issues.length&&dl!=null&&dl>5&&lat!=null&&lat<100) issues.push('Looking healthy — no issues detected this round.');
+  var box=document.getElementById('tips'),txt=document.getElementById('tiptext');
+  box.style.display='block'; txt.innerHTML=issues.map(function(i){return'• '+i;}).join('<br>');
+}
+
+function rebuildCharts(){
+  var wPts=sessions.wifi,cPts=sessions.cell;
+  var allPts=wPts.concat(cPts).sort(function(a,b){return a.ts-b.ts;});
+  var labels=allPts.map(function(p){return p.label;});
+  function ptsFor(arr,key){
+    return allPts.map(function(p){
+      var found=null;
+      for(var i=0;i<arr.length;i++){if(arr[i].ts===p.ts){found=arr[i];break;}}
+      return found?found[key]:null;
+    });
+  }
+  var wDL=ptsFor(wPts,'dl'),cDL=ptsFor(cPts,'dl');
+  var wLat=ptsFor(wPts,'lat'),cLat=ptsFor(cPts,'lat');
+  var baseOpts={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:9},color:'#999',autoSkip:true,maxTicksLimit:8},grid:{color:'rgba(0,0,0,0.05)'}},y:{ticks:{font:{size:9},color:'#999'},grid:{color:'rgba(0,0,0,0.05)'}}}};
+  if(dlChart)dlChart.destroy();
+  dlChart=new Chart(document.getElementById('chartDl'),{type:'line',data:{labels:labels,datasets:[
+    {label:'Wi-Fi DL',data:wDL,borderColor:'#185FA5',backgroundColor:'rgba(24,95,165,0.07)',borderWidth:2,pointRadius:3,tension:.3,spanGaps:true},
+    {label:'Cell DL',data:cDL,borderColor:'#BA7517',backgroundColor:'rgba(186,117,23,0.07)',borderWidth:2,borderDash:[5,3],pointRadius:3,tension:.3,spanGaps:true}
+  ]},options:baseOpts});
+  if(latChart)latChart.destroy();
+  latChart=new Chart(document.getElementById('chartLat'),{type:'line',data:{labels:labels,datasets:[
+    {label:'Wi-Fi Lat',data:wLat,borderColor:'#185FA5',backgroundColor:'rgba(24,95,165,0.07)',borderWidth:2,pointRadius:3,tension:.3,spanGaps:true},
+    {label:'Cell Lat',data:cLat,borderColor:'#BA7517',backgroundColor:'rgba(186,117,23,0.07)',borderWidth:2,borderDash:[5,3],pointRadius:3,tension:.3,spanGaps:true}
+  ]},options:baseOpts});
+  updateSummary();
+}
+
+function avg(arr){var v=arr.filter(function(x){return x!=null;});return v.length?Math.round(v.reduce(function(a,b){return a+b;},0)/v.length):null;}
+
+function updateSummary(){
+  var wdl=avg(sessions.wifi.map(function(p){return p.dl;}));
+  var cdl=avg(sessions.cell.map(function(p){return p.dl;}));
+  var wlat=avg(sessions.wifi.map(function(p){return p.lat;}));
+  var clat=avg(sessions.cell.map(function(p){return p.lat;}));
+  var wcons=consistencyScore(sessions.wifi.map(function(p){return p.dl;}));
+  var ccons=consistencyScore(sessions.cell.map(function(p){return p.dl;}));
+
+  document.getElementById('s-wdl').textContent=wdl!=null?wdl.toFixed(1)+' Mbps':'—';
+  document.getElementById('s-cdl').textContent=cdl!=null?cdl.toFixed(1)+' Mbps':'—';
+  document.getElementById('s-wlat').textContent=wlat!=null?wlat+'ms':'—';
+  document.getElementById('s-clat').textContent=clat!=null?clat+'ms':'—';
+
+  function consText(s){return s!=null?s+'%':'need 3+ samples';}
+  function consColor(s){return s!=null?scoreColor(s):'#aaa';}
+  var wce=document.getElementById('s-wcons'),cce=document.getElementById('s-ccons');
+  wce.textContent=consText(wcons); wce.style.color=consColor(wcons);
+  cce.textContent=consText(ccons); cce.style.color=consColor(ccons);
+}
+
+/* ── main test ── */
+async function runOnce(){
+  if(running)return; running=true;
+  var type=sessionType;
+  log('Running test ('+type+')…','info');
+  setRingRunning();
+  setProgress(10); detectConn(); showWarn(null);
+  setProgress(25);
+  var latRes=await measureLatency(8);
+  var lat=latRes.avg,jit=latRes.jitter,loss=latRes.loss;
+  setProgress(50);
+  var dl=await measureDL();
+  setProgress(75);
+  var ul=await measureUL();
+  setProgress(100); setTimeout(function(){setProgress(null);},500);
+
+  if(dl===null&&lat===null){
+    showWarn('Tests returned no data. If opening as a local file (file://), serve via a local web server instead. Network requests may be blocked by browser security.');
+    log('All tests failed — possible file:// restriction','err');
+    running=false; startCountdown(intervalSec); return;
+  }
+
+  var label=ts();
+  var point={ts:Date.now(),label:label,dl:dl,ul:ul,lat:lat,jit:jit,loss:loss};
+  sessions[type].push(point);
+  if(sessions[type].length>MAXPTS)sessions[type].shift();
+
+  updateLiveCards(dl,ul,lat,jit,type);
+  analyzeTips(dl,lat,jit,loss,type);
+  rebuildCharts();
+  readSignal();
+
+  log('['+type.toUpperCase()+'] DL='+(dl!=null?dl.toFixed(2)+' Mbps':'N/A')+
+      ' UL='+(ul!=null?ul.toFixed(2)+' Mbps':'N/A')+
+      ' Lat='+(lat!=null?lat+'ms':'N/A')+
+      ' Jit='+(jit!=null?jit+'ms':'N/A')+
+      ' Loss='+loss+'%',
+      (loss>10||(lat!=null&&lat>200))?'warn':'ok');
+
+  running=false;
+  startCountdown(intervalSec);
+}
+
+function startSession(type){
+  if(timerRef)clearInterval(timerRef);
+  if(cdRef)clearInterval(cdRef);
+  sessionType=type;
+  intervalSec = IV_ALL[parseInt(document.getElementById('ivslider').value)] || 180;
+  document.getElementById('btnWifi').disabled=true;
+  document.getElementById('btnCell').disabled=true;
+  document.getElementById('btnStop').disabled=false;
+  document.getElementById('cdwrap').style.display='flex';
+  log('--- '+type.toUpperCase()+' session started (every '+ivLabel(intervalSec)+') ---','info');
+  runOnce();
+  timerRef=setInterval(runOnce,intervalSec*1000);
+}
+
+function stopSession(){
+  if(timerRef)clearInterval(timerRef); timerRef=null;
+  if(cdRef)clearInterval(cdRef); cdRef=null;
+  running=false;
+  document.getElementById('btnWifi').disabled=false;
+  document.getElementById('btnCell').disabled=false;
+  document.getElementById('btnStop').disabled=true;
+  setRingIdle();
+  log('--- Session stopped ---','info');
+  setProgress(null);
+}
+
+function exportData(){
+  var csv='time,type,dl_mbps,ul_mbps,lat_ms,jit_ms,loss_pct\n';
+  ['wifi','cell'].forEach(function(t){
+    sessions[t].forEach(function(p){
+      csv+=p.label+','+t+','+(p.dl!=null?p.dl.toFixed(2):'')+','+(p.ul!=null?p.ul.toFixed(2):'')+','+(p.lat!=null?p.lat:'')+','+(p.jit!=null?p.jit:'')+','+p.loss+'\n';
+    });
+  });
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='network-monitor-'+Date.now()+'.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  log('CSV exported','info');
+}
+
+window.addEventListener('online',function(){log('Connection restored','ok');detectConn();});
+window.addEventListener('offline',function(){log('Connection lost!','err');detectConn();});
+detectConn();
+onIvChange(document.getElementById('ivslider').value);
+</script>
+</body>
+</html>
